@@ -1,6 +1,9 @@
 const svgns = "http://www.w3.org/2000/svg";
-let point_array = [];
 let svg = document.createElementNS(svgns, "svg");
+let svg_figures = [];
+let point_array = [];
+const width = 640;
+const height = 480;
 
 // Base geometry primitives
 
@@ -38,11 +41,9 @@ class QuadraticBezier {
   }
 }
 
-class CubicBezier {
+class CubicBezier extends QuadraticBezier {
   constructor(origin_point=new Point(0,0), end_point, cp1, cp2) {
-    this.origin = origin_point;
-    this.end = end_point;
-    this.cp1 = cp1;
+    super(origin_point, end_point, cp1);
     this.cp2 = cp2;
   }
 
@@ -74,7 +75,7 @@ class SVGElement {
 
 class SVGLine extends SVGElement {
   constructor(line, stroke='black', stroke_width='1', fill='none') {
-    super(stroke, stroke_width, fill)
+    super(stroke, stroke_width, fill);
     this.line = line;
   }
 
@@ -89,15 +90,15 @@ class SVGLine extends SVGElement {
     line.setAttribute('x2', this.line.p2.x);
     line.setAttribute('y1', this.line.p1.y);
     line.setAttribute('y2', this.line.p2.y);
-    super.setStyle(line);
+    this.setStyle(line);
 
     return line
   }
 }
 class SVGCircle extends SVGElement {
   constructor(point, r='1', stroke='black', stroke_width='1', fill='none') {
-    super(stroke, stroke_width, fill)
-    this.point = point
+    super(stroke, stroke_width, fill);
+    this.point = point;
     this.r = r;
   }
 
@@ -111,7 +112,7 @@ class SVGCircle extends SVGElement {
     circle.setAttribute('cx', this.point.x);
     circle.setAttribute('cy', this.point.y);
     circle.setAttribute('r', this.r);
-    super.setStyle(circle);
+    this.setStyle(circle);
 
     return circle
   }
@@ -119,7 +120,7 @@ class SVGCircle extends SVGElement {
 
 class SVGQuadraticBezier extends SVGElement {
   constructor(bezier, stroke='black', stroke_width='1', fill='none') {
-    super(stroke, stroke_width, fill)
+    super(stroke, stroke_width, fill);
 
     this.bezier = bezier;
     this.stroke = stroke;
@@ -138,7 +139,7 @@ class SVGQuadraticBezier extends SVGElement {
     let path = document.createElementNS(svgns, 'path');
 
     path.setAttribute('d', this.d);
-    super.setStyle(path);
+    this.setStyle(path);
 
     return path
   }
@@ -146,7 +147,7 @@ class SVGQuadraticBezier extends SVGElement {
 
 class SVGCubicBezier extends SVGElement {
   constructor(bezier, stroke='black', stroke_width='1', fill='none') {
-    super(stroke, stroke_width, fill)
+    super(stroke, stroke_width, fill);
 
     this.bezier = bezier;
     this.stroke = stroke;
@@ -165,70 +166,82 @@ class SVGCubicBezier extends SVGElement {
     let path = document.createElementNS(svgns, 'path');
 
     path.setAttribute('d', this.d);
-    super.setStyle(path);
+    this.setStyle(path);
 
     return path
   }
 }
+
+// Composite SVG objects
 
 class PrettyQuadro {
   constructor(p1, p2, p3) {
     this.p1 = p1;
     this.p2 = p2;
     this.p3 = p3;
+    this.parts = [];
   }
 
   draw(svg_object) {
-    let bezier = new QuadraticBezier(this.p1, this.p2, this.p3);
+    const bezier = new QuadraticBezier(this.p1, this.p2, this.p3);
 
-    let svg_bezier = new SVGQuadraticBezier(bezier);
-    let svg_start = new SVGCircle(this.p1, 4);
-    let svg_end = new SVGCircle(this.p2, 2);
-    let svg_control = new SVGCircle(this.p3, 4);
-    let svg_line_01 = new SVGLine(new Line(this.p1, this.p2), 'red');
-    let svg_line_02 = new SVGLine(new Line(this.p2, this.p3), 'red');
+    const svg_bezier = new SVGQuadraticBezier(bezier);
+    const svg_start = new SVGCircle(this.p1, 4);
+    const svg_end = new SVGCircle(this.p2, 2);
+    const svg_control_01 = new SVGCircle(this.p3, 4);
+    const svg_line_01 = new SVGLine(new Line(this.p1, this.p2), 'red');
+    const svg_line_02 = new SVGLine(new Line(this.p2, this.p3), 'red');
 
     let elements = [
-        svg_bezier.generate(),
-        svg_start.generate(),
-        svg_end.generate(),
-        svg_control.generate(),
-        svg_line_01.generate(),
-        svg_line_02.generate(),
+      svg_bezier.generate(),
+      svg_start.generate(),
+      svg_end.generate(),
+      svg_control_01.generate(),
+      svg_line_01.generate(),
+      svg_line_02.generate(),
     ];
 
     for (let i = 0; i < elements.length; i++) {
-      svg_object.appendChild(elements[i]);
+      this.parts.push(svg_object.appendChild(elements[i]))
     }
-
   }
+
+   erase(svg_object) {
+    for (let i = 0; i < this.parts.length; i++) {
+      svg_object.removeChild(this.parts[i]);
+    }
+    this.parts = [];
+   }
+
 }
 
-class PrettyCubic {
+class PrettyCubic extends PrettyQuadro {
   constructor(p1, p2, p3, p4) {
-    this.p1 = p1;
-    this.p2 = p2;
-    this.p3 = p3;
+    super(p1, p2, p3);
     this.p4 = p4;
   }
 
   draw(svg_object) {
-    let bezier = new CubicBezier(this.p1, this.p2, this.p3, this.p4);
+    const bezier = new CubicBezier(this.p1, this.p2, this.p3, this.p4);
 
-    let svg_bezier = new SVGCubicBezier(bezier);
-    let svg_start = new SVGCircle(this.p1, 4);
-    let svg_end = new SVGCircle(this.p2, 2);
-    let svg_control = new SVGCircle(this.p3, 4);
-    let svg_line_01 = new SVGLine(new Line(this.p1, this.p2), 'red');
-    let svg_line_02 = new SVGLine(new Line(this.p2, this.p3), 'red');
+    const svg_bezier = new SVGCubicBezier(bezier);
+    const svg_start = new SVGCircle(this.p1, 4);
+    const svg_end = new SVGCircle(this.p2, 4);
+    const svg_control_01 = new SVGCircle(this.p3, 2);
+    const svg_control_02 = new SVGCircle(this.p4, 2);
+    const svg_line_01 = new SVGLine(new Line(this.p1, this.p3), 'red');
+    const svg_line_02 = new SVGLine(new Line(this.p3, this.p4), 'red');
+    const svg_line_03 = new SVGLine(new Line(this.p4, this.p2), 'red');
 
     let elements = [
-        svg_bezier.generate(),
-        svg_start.generate(),
-        svg_end.generate(),
-        svg_control.generate(),
-        svg_line_01.generate(),
-        svg_line_02.generate(),
+      svg_bezier.generate(),
+      svg_start.generate(),
+      svg_end.generate(),
+      svg_control_01.generate(),
+      svg_control_02.generate(),
+      svg_line_01.generate(),
+      svg_line_02.generate(),
+      svg_line_03.generate(),
     ];
 
     for (let i = 0; i < elements.length; i++) {
@@ -245,25 +258,49 @@ function alert_coords(event) {
 
   let cursorpt = pt.matrixTransform(svg.getScreenCTM().inverse());
 
-  let svg_point = new Point(cursorpt.x, cursorpt.y);
+  let svg_point = new Point(Math.round(cursorpt.x), Math.round(cursorpt.y));
+  if (svg_point.x < 0 || svg_point.y < 0 || svg_point.y > height || svg_point.x > width) {
+    return ;
+  }
 
   point_array.push(svg_point);
-//  let svg_circle = new SVGCircle(svg_point);
-//  svg.appendChild(svg_circle.generate())
+  const type = document.querySelector('#degree').value;
 
-  if (point_array.length === 3) {
-    let fig = new PrettyQuadro(point_array[0], point_array[2], point_array[1], point_array[3]);
-    // let n = new PrettyCubic(point_array[0], point_array[1], point_array[2], point_array[3]);
-    fig.draw(svg);
+  if (type ==='cubic') {
+    if (point_array.length === 4) {
+      let fig = new PrettyCubic(point_array[0], point_array[1], point_array[2], point_array[3]);
+      fig.draw(svg);
+      svg_figures.pop().erase(svg);
+      svg_figures.push(fig);
+      point_array = [];
+    }
+    if (point_array.length === 3) {
+      let fig = new PrettyQuadro(point_array[0], point_array[2], point_array[1]);
+      fig.draw(svg);
+      svg_figures.push(fig);
 
-    point_array = [];
+    }
+  } else {
+    if (point_array.length === 3) {
+      let fig = new PrettyQuadro(point_array[0], point_array[2], point_array[1]);
+      fig.draw(svg);
+      svg_figures.push(fig);
+      point_array = [];
+    }
   }
 }
 
-window.onload = function() {
-  svg.setAttribute("width", 640);
-  svg.setAttribute("height", 480);
+
+document.addEventListener('DOMContentLoaded', () => {
+  svg.setAttribute("width", width);
+  svg.setAttribute("height", height);
 
   document.body.appendChild(svg);
   document.addEventListener("click", alert_coords);
-};
+
+  document.querySelector('#erase').onclick = () => {
+    svg.innerHTML = '';
+    point_array = [];
+    svg_figures = [];
+  }
+});
