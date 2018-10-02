@@ -1,6 +1,7 @@
 // globals
 
 const SVGNS = "http://www.w3.org/2000/svg";
+let EDITMODE = false;
 
 // Base geometry primitives
 
@@ -178,10 +179,8 @@ class SVGField {
     this.width = width;
     this.height = height;
     this.svgObject = document.createElementNS(SVGNS, "svg");
-    this.graphics = [];
     this.svgObject.setAttribute("width", this.width);
     this.svgObject.setAttribute("height", this.height);
-    this.state = 0;
     this.figures = [];
   }
 
@@ -191,109 +190,139 @@ class SVGField {
 
   click(point) {
     try {
-      this.figures.slice(-1)[0].addPoint(this, point);
+      this.figures.slice(-1)[0].addPoint(point);
     }
-    catch(x)
+    catch(err)
     {
       // if addPoint method fails, create a new Bezier and repeat
       let type = document.querySelector('#degree').value;
-      this.figures.push(new Bezier(type));
+      this.figures.push(new Bezier(this, type));
       this.click(point);
     }
   }
 
-  edit(point) {
-    /*
-    for object in this.graphics {
-      if object.isPoint() {
-        let distance = sqrt(abs(point.x - object.x) +...)
-        if distance < 4 {
-
-          return
-        }
-      }
-    }
-    */
-    throw 'Not Implemented'
-  }
-
   add(node) {
-    let fig = this.svgObject.appendChild(node);
-    this.graphics.push(fig);
-    return fig;
+    return this.svgObject.appendChild(node);
   }
 
   remove(node) {
-    this.svgObject.removeChild(node);
+    try {
+      this.svgObject.removeChild(node);
+    }
+    catch(x) {}
   }
 
   clear() {
     this.svgObject.innerHTML = '';
-    this.graphics = [];
     this.figures = [];
   }
 }
 
 class Bezier {
-  constructor(type) {
+  constructor(svg, type) {
     this.type = type;
+    this.svg = svg;
     this.points = [];
     this.nodes = {};
   }
 
-  addPoint(svg, point) {
-    this.points.push(point);
-    let state = this.points.length;
+  drawP0(point) {
+    this.points[0] = point;
+
+    const p0 = new SVGCircle(point, 4);
+    this.nodes.p0 = this.svg.add(p0.generate());
+  }
+
+  drawP1(point) {
+    this.points[1] = point;
+
+    const p1 = new SVGCircle(point, 4);
+    this.nodes.p1 = this.svg.add(p1.generate());
+    const line_01 = new SVGLine(new Line(this.points[0], point), 'black');
+    this.nodes.line_01 = this.svg.add(line_01.generate());
+  }
+
+  drawP2(point) {
+    this.points[2] = point;
+
+    this.svg.remove(this.nodes.line_01);
+
+    const p2 = new SVGCircle(point, 2);
+    this.svg.add(p2.generate());
+
+    const line_02 = new SVGLine(new Line(this.points[0], this.points[2]), 'red');
+    this.nodes.line_02 = this.svg.add(line_02.generate());
+    const line_03 = new SVGLine(new Line(this.points[1], this.points[2]), 'red');
+    this.nodes.line_03 = this.svg.add(line_03.generate());
+
+    const qb = new QuadraticBezier(this.points[0], this.points[2], this.points[1]);
+    const svg_qbezier = new SVGQuadraticBezier(qb);
+    this.nodes.quadro = this.svg.add(svg_qbezier.generate());
+  }
+
+  drawP3(point) {
+    this.points[3] = point;
+
+    this.svg.remove(this.nodes.quadro);
+    this.svg.remove(this.nodes.line_03);
+
+    const p3 = new SVGCircle(point, 2);
+    this.svg.add(p3.generate());
+    const line_04 = new SVGLine(new Line(this.points[2], this.points[3]), 'red');
+    this.nodes.line_04 = this.svg.add(line_04.generate());
+    const line_05 = new SVGLine(new Line(this.points[1], point), 'red');
+    this.nodes.line_05 = this.svg.add(line_05.generate());
+
+    const cb = new CubicBezier(this.points[0], this.points[1], this.points[2], this.points[3]);
+    const svg_cbezier = new SVGCubicBezier(cb);
+    this.nodes.cubic = this.svg.add(svg_cbezier.generate());
+  }
+
+  addPoint(point) {
     switch (this.points.length) {
+      case 0:
+        this.drawP0(point);
+        break;
       case 1:
-        const p0 = new SVGCircle(point, 4);
-        this.nodes.p0 = svg.add(p0.generate());
+        this.drawP1(point);
         break;
       case 2:
-        const p1 = new SVGCircle(point, 4);
-        this.nodes.p1 = svg.add(p1.generate());
-        const line_01 = new SVGLine(new Line(this.points[0], point), 'black');
-        this.nodes.line_01 = svg.add(line_01.generate());
+        this.drawP2(point);
         break;
       case 3:
-        svg.remove(this.nodes.line_01);
-
-        const p2 = new SVGCircle(point, 2);
-        svg.add(p2.generate());
-
-        const line_02 = new SVGLine(new Line(this.points[0], this.points[2]), 'red');
-        this.nodes.line_02 = svg.add(line_02.generate());
-        const line_03 = new SVGLine(new Line(this.points[1], this.points[2]), 'red');
-        this.nodes.line_03 = svg.add(line_03.generate());
-
-        const qb = new QuadraticBezier(this.points[0], this.points[2], this.points[1]);
-        const svg_qbezier = new SVGQuadraticBezier(qb);
-        this.nodes.quadro = svg.add(svg_qbezier.generate());
-        break;
-      case 4:
         if (this.type !== 'cubic') throw 'overflow';
-        svg.remove(this.nodes.quadro);
-        svg.remove(this.nodes.line_03);
-
-        const p3 = new SVGCircle(point, 2);
-        svg.add(p3.generate());
-        const line_04 = new SVGLine(new Line(this.points[2], this.points[3]), 'red');
-        this.nodes.line_04 = svg.add(line_04.generate());
-        const line_05 = new SVGLine(new Line(this.points[1], point), 'red');
-        this.nodes.line_05 = svg.add(line_05.generate());
-
-        const cb = new CubicBezier(this.points[0], this.points[1], this.points[2], this.points[3]);
-        const svg_cbezier = new SVGCubicBezier(cb);
-        this.nodes.cubic = svg.add(svg_cbezier.generate());
+        this.drawP3(point);
         break;
       default:
         throw 'overflow';
     }
   }
 
-  editPoint(svg, point) {
-    //
-    throw 'Not Implemented'
+  clear() {
+    for (let key in this.nodes) {
+      this.svg.remove(key);
+    }
+//  if (this.nodes.p0) this.svg.remove(this.nodes.p0);
+//  if (this.nodes.p1) this.svg.remove(this.nodes.p1);
+//  if (this.nodes.line_01) this.svg.remove(this.nodes.line_01);
+//  if (this.nodes.p2) this.svg.remove(this.nodes.p2);
+//  if (this.nodes.line_02) this.svg.remove(this.nodes.line_02);
+//  if (this.nodes.line_03) this.svg.remove(this.nodes.line_03);
+//  if (this.nodes.quadro) this.svg.remove(this.nodes.quadro);
+//  if (this.nodes.p3) this.svg.remove(this.nodes.p3);
+//  if (this.nodes.line_04) this.svg.remove(this.nodes.line_04);
+//  if (this.nodes.line_05) this.svg.remove(this.nodes.line_05);
+//  if (this.nodes.cubic) this.svg.remove(this.nodes.cubic);
+  }
+
+  editPoint(num, new_point) {
+    this.points[num] = new_point;
+    this.clear();
+    this.drawP0(this.points[0]);
+    this.drawP1(this.points[1]);
+    this.drawP2(this.points[2]);
+    this.drawP3(this.points[3]);
+    if (this.points[4]) this.drawP4(this.points[4]);
   }
 
   toString() {
@@ -302,6 +331,15 @@ class Bezier {
 }
 
 // functions
+
+function closest_point(ref, points) {
+  function dist(point) {
+    return Math.sqrt(Math.pow((ref.x - point.x), 2) + Math.pow((ref.y - point.y), 2));
+  }
+  let distances = points.map(dist);
+  let smallest = Math.min(...distances);
+  if (smallest < 100) return points[distances.indexOf(smallest)]
+}
 
 function alert_coords(event) {
   let pt = svg_main.svg().createSVGPoint();
@@ -317,18 +355,32 @@ function alert_coords(event) {
     return ;
   }
 
-  svg_main.click(svg_point);
+  if (EDITMODE) {
+    const test = svg_main.figures.map(obj => {
+      return [obj.points, obj];
+    });
+    console.log(test[0]);
+   // closest_point(svg_point, points);
+  } else {
+    svg_main.click(svg_point);
+  }
 }
 
 const svg_main = new SVGField(640, 480);
 
 
 document.addEventListener('DOMContentLoaded', () => {
+  console.log(closest_point(new Point(1,2), [new Point(10,5), new Point(100,100)]));
 
   document.body.appendChild(svg_main.svg());
 
   document.addEventListener("click", alert_coords);
 
-  document.querySelector('#erase').onclick = () => { svg_main.clear(); }
+  document.querySelector('#erase').onclick = () => { svg_main.clear(); };
+
+  document.querySelector('#edit').onclick = () => {
+    EDITMODE = !EDITMODE;
+    document.getElementById('editstatus').innerHTML = EDITMODE;
+  }
 });
 
