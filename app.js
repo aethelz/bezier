@@ -1,7 +1,6 @@
 // globals
 
 const SVGNS = "http://www.w3.org/2000/svg";
-let EDITMODE = false;
 
 // Base geometry primitives
 
@@ -174,14 +173,17 @@ class SVGCubicBezier extends SVGElement {
 // Composite SVG objects
 
 class SVGField {
-  // stores html svg object + info about all figures already drawn
+  // stores html svg object, info about all figures already drawn, mode and so on
   constructor(width, height) {
     this.width = width;
     this.height = height;
     this.svgObject = document.createElementNS(SVGNS, "svg");
     this.svgObject.setAttribute("width", this.width);
     this.svgObject.setAttribute("height", this.height);
+    this.svgObject.style.border = "thin solid #000000";
     this.figures = [];
+    this.mode = 0;
+    this.editObject = []; //stores bezier and a Point that the user is changing
   }
 
   svg() {
@@ -219,11 +221,21 @@ class SVGField {
 }
 
 class Bezier {
+  // composite "pretty" bezier
   constructor(svg, type) {
     this.type = type;
     this.svg = svg;
     this.points = [];
     this.nodes = {};
+  }
+
+  complete() {
+    if ( (this.type === 'cubic' && this.points.length === 4)
+         || (this.type !== 'cubic' && this.points.length === 3) ) {
+      return true;
+    }
+
+    return false;
   }
 
   drawP0(point) {
@@ -248,7 +260,7 @@ class Bezier {
     this.svg.remove(this.nodes.line_01);
 
     const p2 = new SVGCircle(point, 2);
-    this.svg.add(p2.generate());
+    this.nodes.p2 = this.svg.add(p2.generate());
 
     const line_02 = new SVGLine(new Line(this.points[0], this.points[2]), 'red');
     this.nodes.line_02 = this.svg.add(line_02.generate());
@@ -267,13 +279,15 @@ class Bezier {
     this.svg.remove(this.nodes.line_03);
 
     const p3 = new SVGCircle(point, 2);
-    this.svg.add(p3.generate());
+    this.nodes.p3 = this.svg.add(p3.generate());
     const line_04 = new SVGLine(new Line(this.points[2], this.points[3]), 'red');
     this.nodes.line_04 = this.svg.add(line_04.generate());
     const line_05 = new SVGLine(new Line(this.points[1], point), 'red');
     this.nodes.line_05 = this.svg.add(line_05.generate());
 
-    const cb = new CubicBezier(this.points[0], this.points[1], this.points[2], this.points[3]);
+    const cb = new CubicBezier(
+      this.points[0], this.points[1], this.points[2], this.points[3],
+    );
     const svg_cbezier = new SVGCubicBezier(cb);
     this.nodes.cubic = this.svg.add(svg_cbezier.generate());
   }
@@ -300,29 +314,18 @@ class Bezier {
 
   clear() {
     for (let key in this.nodes) {
-      this.svg.remove(key);
+      this.svg.remove(this.nodes[key]);
     }
-//  if (this.nodes.p0) this.svg.remove(this.nodes.p0);
-//  if (this.nodes.p1) this.svg.remove(this.nodes.p1);
-//  if (this.nodes.line_01) this.svg.remove(this.nodes.line_01);
-//  if (this.nodes.p2) this.svg.remove(this.nodes.p2);
-//  if (this.nodes.line_02) this.svg.remove(this.nodes.line_02);
-//  if (this.nodes.line_03) this.svg.remove(this.nodes.line_03);
-//  if (this.nodes.quadro) this.svg.remove(this.nodes.quadro);
-//  if (this.nodes.p3) this.svg.remove(this.nodes.p3);
-//  if (this.nodes.line_04) this.svg.remove(this.nodes.line_04);
-//  if (this.nodes.line_05) this.svg.remove(this.nodes.line_05);
-//  if (this.nodes.cubic) this.svg.remove(this.nodes.cubic);
   }
 
-  editPoint(num, new_point) {
-    this.points[num] = new_point;
+  editPoint(old_point, new_point) {
+    // takes in old and an edited Point, completely redraws entire figure
+    this.points[this.points.indexOf(old_point)] = new_point;
     this.clear();
     this.drawP0(this.points[0]);
     this.drawP1(this.points[1]);
     this.drawP2(this.points[2]);
-    this.drawP3(this.points[3]);
-    if (this.points[4]) this.drawP4(this.points[4]);
+    if (this.type === 'cubic') this.drawP3(this.points[3]);
   }
 
   toString() {
@@ -333,15 +336,24 @@ class Bezier {
 // functions
 
 function closest_point(ref, points) {
+  // (ref: Point, points: [Point] -> [Point, float]
+  // takes in a reference Point, and an Array of Points, returns one Point
+  // closest to the reference and a resulting distance between the two
+
   function dist(point) {
-    return Math.sqrt(Math.pow((ref.x - point.x), 2) + Math.pow((ref.y - point.y), 2));
+    // shortest distance calculator
+    return Math.sqrt(Math.pow((ref.x - point.x), 2)
+         + Math.pow((ref.y - point.y), 2));
   }
+
   let distances = points.map(dist);
   let smallest = Math.min(...distances);
-  if (smallest < 100) return points[distances.indexOf(smallest)]
+
+  return [points[distances.indexOf(smallest)], smallest]
 }
 
 function alert_coords(event) {
+  // recalculating absolute coordinates into relative SVG ones
   let pt = svg_main.svg().createSVGPoint();
   pt.x = event.clientX;
   pt.y = event.clientY;
@@ -355,22 +367,47 @@ function alert_coords(event) {
     return ;
   }
 
-  if (EDITMODE) {
-    const test = svg_main.figures.map(obj => {
-      return [obj.points, obj];
-    });
-    console.log(test[0]);
-   // closest_point(svg_point, points);
-  } else {
-    svg_main.click(svg_point);
+  switch (svg_main.mode) {
+    case 0:
+      // normal drawing
+      svg_main.click(svg_point);
+      break;
+    case 1:
+      // EDITMODE - choosing point to change
+      let allpoints = svg_main.figures.reduce((acc, curval) => {
+        return acc.concat(curval.points);
+      }, []);
+
+      let [clp, cld] = closest_point(svg_point, allpoints);
+
+      // if point clicked is too far away from all existing geometry - bail
+      if (cld > 20) return;
+
+      svg_main.editObject[1] = clp;
+      for (let i = 0; i < svg_main.figures.length; i++) {
+        if (svg_main.figures[i].points.includes(svg_main.editObject[1])) {
+          svg_main.editObject[0] = svg_main.figures[i];
+        }
+      }
+      const pr = new SVGCircle(clp, 6, 'red');
+     // this.nodes.p2 = this.svg.add(p2.generate());
+      svg_main.editObject[2] = svg_main.add(pr.generate());
+      svg_main.mode = 2;
+      document.getElementById('editstatus').innerHTML = 'Choose a new position for a point';
+      break;
+    case 2:
+      // EDITMODE - choosing a place to move an old point to
+      svg_main.remove(svg_main.editObject[2]);
+      svg_main.editObject[0].editPoint(svg_main.editObject[1], svg_point);
+      document.getElementById('editstatus').innerHTML = 'Choose a point to change';
+      svg_main.mode = 1;
+      break;
   }
 }
 
-const svg_main = new SVGField(640, 480);
-
+const svg_main = new SVGField(800, 600);
 
 document.addEventListener('DOMContentLoaded', () => {
-  console.log(closest_point(new Point(1,2), [new Point(10,5), new Point(100,100)]));
 
   document.body.appendChild(svg_main.svg());
 
@@ -379,8 +416,17 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelector('#erase').onclick = () => { svg_main.clear(); };
 
   document.querySelector('#edit').onclick = () => {
-    EDITMODE = !EDITMODE;
-    document.getElementById('editstatus').innerHTML = EDITMODE;
+    if (svg_main.figures.length > 0 && !svg_main.figures[svg_main.figures.length - 1].complete()) {
+      document.getElementById('editstatus').innerHTML = 'Please, finish drawing first';
+      return ;
+    }
+    if (svg_main.mode === 0) {
+      svg_main.mode = 1;
+      document.getElementById('editstatus').innerHTML = 'Choose a point to change';
+    } else {
+      svg_main.mode = 0;
+      document.getElementById('editstatus').innerHTML = 'Draw a spline';
+    }
   }
 });
 
