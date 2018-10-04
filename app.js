@@ -1,6 +1,4 @@
-// globals
-
-const SVGNS = "http://www.w3.org/2000/svg";
+'use strict';
 
 // Base geometry primitives
 
@@ -52,6 +50,7 @@ class CubicBezier extends QuadraticBezier {
 // SVG-specific classes
 
 class SVGElement {
+  // contains SVG style specifics, common to all SVG elements
   constructor(stroke='black', stroke_width='1', fill='none') {
     this.stroke = stroke;
     this.stroke_width = stroke_width;
@@ -166,24 +165,24 @@ class SVGCubicBezier extends SVGElement {
     path.setAttribute('d', this.d);
     this.setStyle(path);
 
-    return path
+    return path;
   }
 }
 
 // Composite SVG objects
 
-class SVGField {
-  // stores html svg object, info about all figures already drawn, mode and so on
+class SVGArea {
+  // stores svg object, info about all figures already drawn, mode and so on
   constructor(width, height) {
     this.width = width;
     this.height = height;
-    this.svgObject = document.createElementNS(SVGNS, "svg");
-    this.svgObject.setAttribute("width", this.width);
-    this.svgObject.setAttribute("height", this.height);
-    this.svgObject.style.border = "thin solid #000000";
+    this.svgObject = document.createElementNS(SVGNS, 'svg');
+    this.svgObject.setAttribute('width', this.width);
+    this.svgObject.setAttribute('height', this.height);
+    this.svgObject.style.border = 'thin solid #000000';
     this.figures = [];
     this.mode = 0;
-    this.editObject = []; //stores bezier and a Point that the user is changing
+    this.editObject = {}; //stores edit information
   }
 
   svg() {
@@ -193,9 +192,7 @@ class SVGField {
   click(point) {
     try {
       this.figures.slice(-1)[0].addPoint(point);
-    }
-    catch(err)
-    {
+    } catch(err) {
       // if addPoint method fails, create a new Bezier and repeat
       let type = document.querySelector('#degree').value;
       this.figures.push(new Bezier(this, type));
@@ -210,8 +207,8 @@ class SVGField {
   remove(node) {
     try {
       this.svgObject.removeChild(node);
+    } catch(x) {
     }
-    catch(x) {}
   }
 
   clear() {
@@ -221,7 +218,7 @@ class SVGField {
 }
 
 class Bezier {
-  // composite "pretty" bezier
+  // composite 'pretty' bezier.
   constructor(svg, type) {
     this.type = type;
     this.svg = svg;
@@ -230,11 +227,11 @@ class Bezier {
   }
 
   complete() {
-    if ( (this.type === 'cubic' && this.points.length === 4)
-         || (this.type !== 'cubic' && this.points.length === 3) ) {
+    // tests whether the figure is complete
+    if ((this.type === 'cubic' && this.points.length === 4)
+         || (this.type !== 'cubic' && this.points.length === 3)) {
       return true;
     }
-
     return false;
   }
 
@@ -262,12 +259,15 @@ class Bezier {
     const p2 = new SVGCircle(point, 2);
     this.nodes.p2 = this.svg.add(p2.generate());
 
-    const line_02 = new SVGLine(new Line(this.points[0], this.points[2]), 'red');
+    const line_02 =
+        new SVGLine(new Line(this.points[0], this.points[2]), 'red');
     this.nodes.line_02 = this.svg.add(line_02.generate());
-    const line_03 = new SVGLine(new Line(this.points[1], this.points[2]), 'red');
+    const line_03 =
+        new SVGLine(new Line(this.points[1], this.points[2]), 'red');
     this.nodes.line_03 = this.svg.add(line_03.generate());
 
-    const qb = new QuadraticBezier(this.points[0], this.points[2], this.points[1]);
+    const qb =
+        new QuadraticBezier(this.points[0], this.points[2], this.points[1]);
     const svg_qbezier = new SVGQuadraticBezier(qb);
     this.nodes.quadro = this.svg.add(svg_qbezier.generate());
   }
@@ -280,7 +280,8 @@ class Bezier {
 
     const p3 = new SVGCircle(point, 2);
     this.nodes.p3 = this.svg.add(p3.generate());
-    const line_04 = new SVGLine(new Line(this.points[2], this.points[3]), 'red');
+    const line_04 =
+        new SVGLine(new Line(this.points[2], this.points[3]), 'red');
     this.nodes.line_04 = this.svg.add(line_04.generate());
     const line_05 = new SVGLine(new Line(this.points[1], point), 'red');
     this.nodes.line_05 = this.svg.add(line_05.generate());
@@ -310,6 +311,11 @@ class Bezier {
       default:
         throw 'overflow';
     }
+    if (this.complete()) {
+      document.querySelector('#edit').disabled = false;
+    } else {
+      document.querySelector('#edit').disabled = true;
+    }
   }
 
   clear() {
@@ -333,9 +339,14 @@ class Bezier {
   }
 }
 
+// globals
+
+const SVGNS = 'http://www.w3.org/2000/svg';
+const SVG_MAIN = new SVGArea(800, 600);
+
 // functions
 
-function closest_point(ref, points) {
+function closestPoint(ref, points) {
   // (ref: Point, points: [Point] -> [Point, float]
   // takes in a reference Point, and an Array of Points, returns one Point
   // closest to the reference and a resulting distance between the two
@@ -352,80 +363,80 @@ function closest_point(ref, points) {
   return [points[distances.indexOf(smallest)], smallest]
 }
 
-function alert_coords(event) {
+function clickHandler(event) {
   // recalculating absolute coordinates into relative SVG ones
-  let pt = svg_main.svg().createSVGPoint();
+  let pt = SVG_MAIN.svg().createSVGPoint();
   pt.x = event.clientX;
   pt.y = event.clientY;
 
-  let cursorpt = pt.matrixTransform(svg_main.svg().getScreenCTM().inverse());
+  let cursorpt = pt.matrixTransform(SVG_MAIN.svg().getScreenCTM().inverse());
 
   let svg_point = new Point(Math.round(cursorpt.x), Math.round(cursorpt.y));
-  if (svg_point.x < 0 || svg_point.y < 0 || svg_point.y > svg_main.height
-      || svg_point.x > svg_main.width) {
+  if (svg_point.x < 0 || svg_point.y < 0 || svg_point.y > SVG_MAIN.height
+      || svg_point.x > SVG_MAIN.width) {
     // making sure that the point clicked is inside SVG bounds, bail otherwise
     return ;
   }
 
-  switch (svg_main.mode) {
+  switch (SVG_MAIN.mode) {
     case 0:
       // normal drawing
-      svg_main.click(svg_point);
+      SVG_MAIN.click(svg_point);
       break;
     case 1:
       // EDITMODE - choosing point to change
-      let allpoints = svg_main.figures.reduce((acc, curval) => {
+      let allpoints = SVG_MAIN.figures.reduce((acc, curval) => {
         return acc.concat(curval.points);
       }, []);
 
-      let [clp, cld] = closest_point(svg_point, allpoints);
+      let [clp, cld] = closestPoint(svg_point, allpoints);
 
       // if point clicked is too far away from all existing geometry - bail
       if (cld > 20) return;
 
-      svg_main.editObject[1] = clp;
-      for (let i = 0; i < svg_main.figures.length; i++) {
-        if (svg_main.figures[i].points.includes(svg_main.editObject[1])) {
-          svg_main.editObject[0] = svg_main.figures[i];
+      SVG_MAIN.editObject.clp = clp;
+      for (let i = 0; i < SVG_MAIN.figures.length; i++) {
+        if (SVG_MAIN.figures[i].points.includes(SVG_MAIN.editObject.clp)) {
+          SVG_MAIN.editObject.fig = SVG_MAIN.figures[i];
         }
       }
       const pr = new SVGCircle(clp, 6, 'red');
-     // this.nodes.p2 = this.svg.add(p2.generate());
-      svg_main.editObject[2] = svg_main.add(pr.generate());
-      svg_main.mode = 2;
-      document.getElementById('editstatus').innerHTML = 'Choose a new position for a point';
+      SVG_MAIN.editObject.dot = SVG_MAIN.add(pr.generate());
+      SVG_MAIN.mode = 2;
+      document.getElementById('editstatus').innerHTML =
+          'Choose new position for a point';
       break;
     case 2:
       // EDITMODE - choosing a place to move an old point to
-      svg_main.remove(svg_main.editObject[2]);
-      svg_main.editObject[0].editPoint(svg_main.editObject[1], svg_point);
-      document.getElementById('editstatus').innerHTML = 'Choose a point to change';
-      svg_main.mode = 1;
+      SVG_MAIN.remove(SVG_MAIN.editObject.dot);
+      SVG_MAIN.editObject.fig.editPoint(SVG_MAIN.editObject.clp, svg_point);
+      document.getElementById('editstatus').innerHTML =
+          'Choose a point to change';
+      SVG_MAIN.mode = 1;
       break;
+    default:
+      throw new Error('UNKNOWN MODE');
   }
 }
 
-const svg_main = new SVGField(800, 600);
+// Main Loop
 
 document.addEventListener('DOMContentLoaded', () => {
 
-  document.body.appendChild(svg_main.svg());
+  document.body.appendChild(SVG_MAIN.svg());
 
-  document.addEventListener("click", alert_coords);
+  document.addEventListener('click', clickHandler);
 
-  document.querySelector('#erase').onclick = () => { svg_main.clear(); };
+  document.querySelector('#erase').onclick = () => { SVG_MAIN.clear(); };
 
   document.querySelector('#edit').onclick = () => {
-    if (svg_main.figures.length > 0 && !svg_main.figures[svg_main.figures.length - 1].complete()) {
-      document.getElementById('editstatus').innerHTML = 'Please, finish drawing first';
-      return ;
-    }
-    if (svg_main.mode === 0) {
-      svg_main.mode = 1;
-      document.getElementById('editstatus').innerHTML = 'Choose a point to change';
+    if (SVG_MAIN.mode === 0) {
+      SVG_MAIN.mode = 1;
+      document.getElementById('editstatus').innerHTML =
+          'Choose a point to change';
     } else {
-      svg_main.mode = 0;
-      document.getElementById('editstatus').innerHTML = 'Draw a spline';
+      SVG_MAIN.mode = 0;
+      document.getElementById('editstatus').innerHTML = 'Draw a curve';
     }
   }
 });
