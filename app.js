@@ -171,68 +171,12 @@ class SVGCubicBezier extends SVGElement {
 
 // Composite SVG objects
 
-class SVGArea {
-  // stores svg object, info about all figures already drawn, mode and so on
-  constructor(width, height) {
-    this.width = width;
-    this.height = height;
-    this.svgObject = document.createElementNS(SVGNS, 'svg');
-    this.svgObject.setAttribute('width', this.width);
-    this.svgObject.setAttribute('height', this.height);
-    this.svgObject.style.border = 'thin solid #000000';
-    this.figures = [];
-    this.mode = 0;
-    this.editObject = {}; //stores edit information
-  }
-
-  svg() {
-    return this.svgObject;
-  }
-
-  click(point) {
-    try {
-      this.figures.slice(-1)[0].addPoint(point);
-    } catch(err) {
-      // if addPoint method fails, create a new Bezier and repeat
-      let type = document.querySelector('#degree').value;
-      this.figures.push(new Bezier(this, type));
-      this.click(point);
-    }
-  }
-
-  add(node) {
-    return this.svgObject.appendChild(node);
-  }
-
-  remove(node) {
-    try {
-      this.svgObject.removeChild(node);
-    } catch(x) {
-    }
-  }
-
-  clear() {
-    this.svgObject.innerHTML = '';
-    this.figures = [];
-  }
-}
-
-class Bezier {
+class PrettyQuadro {
   // composite 'pretty' bezier.
-  constructor(svg, type) {
-    this.type = type;
+  constructor(svg) {
     this.svg = svg;
     this.points = [];
     this.nodes = {};
-  }
-
-  complete() {
-    // tests whether the figure is complete
-    if ((this.type === 'cubic' && this.points.length === 4)
-         || (this.type !== 'cubic' && this.points.length === 3)) {
-      return true;
-    }
-    return false;
   }
 
   drawP0(point) {
@@ -272,6 +216,50 @@ class Bezier {
     this.nodes.quadro = this.svg.add(svg_qbezier.generate());
   }
 
+  addPoint(point) {
+    switch (this.points.length) {
+      case 0:
+        this.drawP0(point);
+        document.querySelector('#edit').disabled = true;
+        break;
+      case 1:
+        this.drawP1(point);
+        break;
+      case 2:
+        this.drawP2(point);
+        document.querySelector('#edit').disabled = false;
+        break;
+      default:
+        throw 'overflow';
+    }
+  }
+
+  clear() {
+    for (let key in this.nodes) {
+      this.svg.remove(this.nodes[key]);
+    }
+  }
+
+  editPoint(old_point, new_point) {
+    // takes in old and an edited Point, completely redraws entire figure
+    this.points[this.points.indexOf(old_point)] = new_point;
+    this.clear();
+    this.drawP0(this.points[0]);
+    this.drawP1(this.points[1]);
+    this.drawP2(this.points[2]);
+  }
+
+  toString() {
+    return `Quadratic bezier figure`
+  }
+}
+
+class PrettyCubic extends PrettyQuadro {
+  // composite 'pretty' bezier.
+  constructor(svg) {
+    super(svg);
+  }
+
   drawP3(point) {
     this.points[3] = point;
 
@@ -297,6 +285,7 @@ class Bezier {
     switch (this.points.length) {
       case 0:
         this.drawP0(point);
+        document.querySelector('#edit').disabled = true;
         break;
       case 1:
         this.drawP1(point);
@@ -305,37 +294,91 @@ class Bezier {
         this.drawP2(point);
         break;
       case 3:
-        if (this.type !== 'cubic') throw 'overflow';
         this.drawP3(point);
+        document.querySelector('#edit').disabled = false;
         break;
       default:
         throw 'overflow';
-    }
-    if (this.complete()) {
-      document.querySelector('#edit').disabled = false;
-    } else {
-      document.querySelector('#edit').disabled = true;
-    }
-  }
-
-  clear() {
-    for (let key in this.nodes) {
-      this.svg.remove(this.nodes[key]);
     }
   }
 
   editPoint(old_point, new_point) {
     // takes in old and an edited Point, completely redraws entire figure
-    this.points[this.points.indexOf(old_point)] = new_point;
-    this.clear();
-    this.drawP0(this.points[0]);
-    this.drawP1(this.points[1]);
-    this.drawP2(this.points[2]);
-    if (this.type === 'cubic') this.drawP3(this.points[3]);
+    super.editPoint(old_point, new_point);
+    this.drawP3(this.points[3]);
   }
 
   toString() {
-    return `${this.type} spline figure`
+    return `Cubic bezier figure`
+  }
+}
+
+class SVGArea {
+  // stores svg object, info about all figures already drawn, mode and so on
+  constructor(width, height) {
+    this.width = width;
+    this.height = height;
+    this.svgObject = document.createElementNS(SVGNS, 'svg');
+    this.svgObject.setAttribute('width', this.width);
+    this.svgObject.setAttribute('height', this.height);
+    this.svgObject.style.border = 'thin solid #000000';
+    this.figures = [];
+    this.mode = 0;
+    this.editObject = {}; //stores edit information
+    this.bezier;
+  }
+
+  setBezierType(type) {
+    this.bezier = type;
+  }
+
+  drawBezier() {
+    let type = document.querySelector('#degree').value;
+
+    if (type === 'cubic') {
+      this.setBezierType(new PrettyCubic(this));
+    } else {
+      this.setBezierType(new PrettyQuadro(this));
+    }
+    this.figures.push(this.bezier);
+  }
+
+  svg() {
+    return this.svgObject;
+  }
+
+  click(point) {
+    if (this.figures.length === 0) {
+      // empty canvas - create bezier
+      this.drawBezier();
+      this.figures.slice(-1)[0].addPoint(point);
+      return ;
+    }
+
+    try {
+      this.figures.slice(-1)[0].addPoint(point);
+    } catch(err) {
+      if (err !== 'overflow') console.log(err);
+      // if addPoint method fails with overflow, create a new Bezier and repeat
+      // output error info if unexpected error occurs
+      this.drawBezier();
+      this.click(point);
+    }
+  }
+
+  add(node) {
+    return this.svgObject.appendChild(node);
+  }
+
+  remove(node) {
+    try {
+      this.svgObject.removeChild(node);
+    } catch(x) {}
+  }
+
+  clear() {
+    this.svgObject.innerHTML = '';
+    this.figures = [];
   }
 }
 
